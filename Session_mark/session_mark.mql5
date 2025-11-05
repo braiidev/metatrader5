@@ -1,0 +1,399 @@
+//+------------------------------------------------------------------+
+//|                                                 Session Mark.mq5 |
+//|                                                         Braiidev |
+//+------------------------------------------------------------------+
+#property copyright "Braiidev"
+#property link      "@braiidev-github-instagram"
+#property version   "1.25"
+#property indicator_chart_window
+
+//=== INPUTS ==========================================================
+input bool Tokio  = false;
+input bool London = true;
+input bool Nyse   = true;
+input bool Indice = false;
+
+//=== CONSTANTES =====================================================
+string BTN_ID        = "SwitchDaySeparator";
+string GLOBAL_KEY    = "DaySeparatorState";
+
+#define COLOR_DAYRANGE clrOrangeRed
+#define VISIBLE_TF (OBJ_ALL_PERIODS & ~(OBJ_PERIOD_D1 | OBJ_PERIOD_W1 | OBJ_PERIOD_MN1))
+
+enum TimeUnitSeconds
+ {
+  SEC_HOUR = 3600,
+  SEC_DAY  = 86400
+ };
+
+//=== DATATYPE ========================================================
+struct SessionCfg
+ {
+  string             name;     // SESSION NAMEndon", ...
+  bool               enabled;  // SWITCH TO DRAW ON CHART
+  int                hour;     // HOUR TO OPEN SESSION IN SERVER TIME
+  int                minute;   // MINUTE OFFSET FOR OPEN (NYSE CASE)
+  color              clr;      // COLOR TO DRAW
+ };
+//=== SET SESSION ====================================================
+SessionCfg MakeSession(string name, bool enabled, int hour, int minute, color clr)
+ {
+  SessionCfg s;
+  s.name = name;
+  s.enabled = enabled;
+  s.hour = hour;
+  s.minute = minute;
+  s.clr = clr;
+  return s;
+ }
+
+//=== VARS ===========================================================
+bool SwitchDaySeparator = true;
+
+//=== UTILITIES ======================================================
+void SaveToggleState()
+ {
+  GlobalVariableSet(GLOBAL_KEY, SwitchDaySeparator ? 1.0 : 0.0);
+ }
+
+//+------------------------------------------------------------------+
+//|LOAD GLOBAL STATE                                                 |
+//+------------------------------------------------------------------+
+void LoadToggleState()
+ {
+  if(GlobalVariableCheck(GLOBAL_KEY))
+    SwitchDaySeparator = (GlobalVariableGet(GLOBAL_KEY) > 0.5);
+  else
+    GlobalVariableSet(GLOBAL_KEY, SwitchDaySeparator ? 1.0 : 0.0);
+ }
+
+//+------------------------------------------------------------------+
+//| INIT                                                             |
+//+------------------------------------------------------------------+
+int OnInit()
+ {
+  DeleteSessionVlines();
+  LoadToggleState();
+  DrawButton();
+  return(INIT_SUCCEEDED);
+ }
+
+//+------------------------------------------------------------------+
+//| ON CALCULATE EVENT                                               |
+//+------------------------------------------------------------------+
+int OnCalculate(const int rates_total,
+                const int prev_calculated,
+                const datetime &time[],
+                const double &open[],
+                const double &high[],
+                const double &low[],
+                const double &close[],
+                const long &tick_volume[],
+                const long &volume[],
+                const int &spread[])
+ {
+  string tfName = TFCompare();
+
+  if(tfName == "HOUR" || tfName == "MINUTE" || tfName == "DAY")
+   {
+    DrawVlines(prev_calculated, rates_total, time, open, SwitchDaySeparator);
+
+    // UPDATE NEW RAY IN REAL TIME ONLY THIS CHANGE A NEW BAR
+    static datetime lastUpdate = 0;
+    if(time[0] != lastUpdate)
+     {
+      lastUpdate = time[0];
+      DrawDayRange(rates_total, time, high, low);
+     }
+   }
+
+  return(rates_total);
+ }
+
+//+------------------------------------------------------------------+
+//| ON CHART EVENT                                                   |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id,
+                  const long &lparam,
+                  const double &dparam,
+                  const string &sparam)
+ {
+  if(id == CHARTEVENT_OBJECT_CLICK && sparam == BTN_ID)
+   {
+    SwitchDaySeparator = !SwitchDaySeparator;
+    //SaveToggleState();
+    DrawButton();
+    VlinesToggle(SwitchDaySeparator);
+    ChartRedraw();
+   }
+ }
+
+//+------------------------------------------------------------------+
+//| DEINIT                                                           |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+ {
+  SaveToggleState();
+  ObjectDelete(0, BTN_ID);
+  DeleteSessionVlines();
+ }
+
+//+------------------------------------------------------------------+
+//| DRAW SESSION VLINES                                              |
+//+------------------------------------------------------------------+
+void DrawVlines(const int prev_calculated,
+                const int rates_total,
+                const datetime &time[],
+                const double &open[],
+                bool state)
+ {
+// CUTOFF TIME TO ONE YEAR CALENDAR TIME CANDLE BARS
+  datetime cutoff = TimeCurrent() - 365 * 24 * 60 * 60;
+  int start = (prev_calculated == 0) ? 0 : (prev_calculated - 1);
+
+  for(int i = start; i < rates_total; i++)
+   {
+    datetime gmt_time = time[i];
+    if(gmt_time < cutoff)
+      continue;
+
+    MqlDateTime t;
+    TimeToStruct(gmt_time, t);
+
+    int hmatch = Indice?1:0;
+    // 00:00 GMT -> NEW DAY BEGINS
+    if(t.hour == hmatch && t.min == 0)
+     {
+      string vname = StringFormat("Session_vdate_%04d_%02d_%02d", t.year, t.mon, t.day);
+      string nday  = NameDay(t.day_of_week);
+      string vtip  = StringFormat("Candle: %s\nat: %02d:00\nOpen: %.5f", nday, GMTZoneToLocal(t.hour), open[i]);
+
+      CreateOrUpdateVline(vname, gmt_time, C'30,30,55', state, vtip, nday);
+
+      // CONFIG SESSION WITH AUX FN STRUCT
+      SessionCfg sessions[3];
+      sessions[0] = MakeSession("Tokio",  Tokio,  OTokio(),  0, C'25,40,25');
+      sessions[1] = MakeSession("London", London, OLondon(), 0, C'25,25,40');
+      sessions[2] = MakeSession("NYSE",   Nyse,   ONyse(), (Indice ? 30 : 0), C'40,25,25');
+
+      for(int s = 0; s < ArraySize(sessions); s++)
+        DrawSession(sessions[s], t, gmt_time, open[i], state);
+     }
+   }
+ }
+
+//+------------------------------------------------------------------+
+//| HOURS BY MARKET TYPE (FOREX OR INDEX)                            |
+//+------------------------------------------------------------------+
+int OGMT()   { return (Indice ? 1 : 0); }
+//--
+int OTokio() { return (Indice ? 2 : 1); }
+//--
+int OLondon() { return (Indice ? 10 : 10); }
+//--
+int ONyse()  { return (Indice ? 16 : 15); }
+
+//+------------------------------------------------------------------+
+//| FN: SESSION PROCCESS                                             |
+//+------------------------------------------------------------------+
+void DrawSession(const SessionCfg &cfg, const MqlDateTime &t_base,
+                 datetime base_gmt_time, double price, bool state)
+ {
+  if(!cfg.enabled)
+    return;
+
+// ONLY RESET DAY IS DETECTED
+  int hmatch = Indice ? 1 : 0;
+  
+  if(t_base.hour != hmatch || t_base.min != 0)
+    return;
+
+  datetime open_time = base_gmt_time + cfg.hour * SEC_HOUR + cfg.minute * 60;
+
+  string name = StringFormat("Session_vopen_%s_%04d_%02d_%02d", cfg.name, t_base.year, t_base.mon, t_base.day);
+  string tip  = StringFormat("Open %s\n%s\n%02d:%02d", cfg.name, NameDay(t_base.day_of_week), GMTZoneToLocal(cfg.hour), cfg.minute);
+  string desc = StringFormat("[%02d:%02d]", GMTZoneToLocal(cfg.hour), cfg.minute);
+
+  CreateOrUpdateVline(name, open_time, cfg.clr, state, tip, desc);
+ }
+
+//+------------------------------------------------------------------+
+//| DRAW DAILY RANGES (TODAY, YESTERDAY AND BEFORE YESTERDAY)        |
+//+------------------------------------------------------------------+
+void DrawDayRange(const int rates_total,
+                  const datetime &time[],
+                  const double &high[],
+                  const double &low[])
+ {
+  color dayColors[3] = { clrOrangeRed, clrOrange, clrDimGray };
+  string dayNames[3] = { "Hoy", "Ayer", "Antes de ayer" };
+
+  for(int shift = 0; shift < 3; shift++)  // 0=today, 1=yesterday, 2=before yesterday
+   {
+    double dayHigh = iHigh(_Symbol, PERIOD_D1, shift);
+    double dayLow  = iLow(_Symbol, PERIOD_D1, shift);
+    datetime dayStart = iTime(_Symbol, PERIOD_D1, shift); // 00:00 server
+    if(dayStart == 0)
+      continue; // security
+
+    datetime t1 = dayStart;
+    datetime t2 = TimeCurrent();
+
+    string highName = StringFormat("Session_high_D%d", shift);
+    string lowName  = StringFormat("Session_low_D%d", shift);
+
+    // CREATE OR MOVE RANGE RAY
+    CreateOrUpdateTrend(highName, t1, dayHigh, t2, dayHigh, dayColors[shift],
+                        StringFormat("%s High (%.5f)", dayNames[shift], dayHigh));
+
+    CreateOrUpdateTrend(lowName, t1, dayLow, t2, dayLow, dayColors[shift],
+                        StringFormat("%s Low (%.5f)", dayNames[shift], dayLow));
+   }
+ }
+
+//+------------------------------------------------------------------+
+//| FN: CREATE/UPDATE VERTICAL LINE                                  |
+//+------------------------------------------------------------------+
+void CreateOrUpdateVline(const string name, datetime dt, color c, bool state, const string &vtip, const string &text)
+ {
+  if(ObjectFind(0, name) < 0)
+    ObjectCreate(0, name, OBJ_VLINE, 0, dt, 0);
+
+  ObjectSetInteger(0, name, OBJPROP_COLOR, c);
+  ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_DOT);
+  ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+  ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, state ? VISIBLE_TF : 0);
+  ObjectSetInteger(0, name, OBJPROP_BACK, true);
+  ObjectSetString(0, name, OBJPROP_TOOLTIP, vtip);
+  ObjectSetString(0, name, OBJPROP_TEXT, text);
+ }
+
+//+------------------------------------------------------------------+
+//| FN: CREATE OR UPDATE TREND LINE RAY                              |
+//+------------------------------------------------------------------+
+void CreateOrUpdateTrend(const string name,
+                         datetime t1, double p1,
+                         datetime t2, double p2,
+                         color col, const string &tip)
+ {
+  if(p1 == 0.0 || t1 == 0)
+    return;
+
+  if(ObjectFind(0, name) < 0)
+    ObjectCreate(0, name, OBJ_TREND, 0, t1, p1, t2, p2);
+  else
+   {
+    ObjectMove(0, name, 0, t1, p1);
+    ObjectMove(0, name, 1, t2, p2);
+   }
+
+  ObjectSetInteger(0, name, OBJPROP_COLOR, col);
+  ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
+  ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+  ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
+  ObjectSetInteger(0, name, OBJPROP_BACK, false);
+  ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, VISIBLE_TF | OBJ_PERIOD_D1);
+  ObjectSetString(0, name, OBJPROP_TOOLTIP, tip);
+ }
+
+//+------------------------------------------------------------------+
+//| TOGGLE VISIBILITY                                                |
+//+------------------------------------------------------------------+
+void VlinesToggle(bool state)
+ {
+  int total = ObjectsTotal(0);
+  for(int i = total - 1; i >= 0; i--)
+   {
+    string name = ObjectName(0, i);
+    if(StringFind(name, "Session_v", 0) == 0)
+      ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, state ? VISIBLE_TF : 0);
+   }
+ }
+
+//+------------------------------------------------------------------+
+//| DELETE ALL OBJECTS CREATED BY INDICATOR                          |
+//+------------------------------------------------------------------+
+void DeleteSessionVlines()
+ {
+  int total = ObjectsTotal(0);
+  for(int i = total - 1; i >= 0; i--)
+   {
+    string name = ObjectName(0, i);
+    if(StringFind(name, "Session_", 0) == 0)
+     {
+      int typ = ObjectGetInteger(0, name, OBJPROP_TYPE);
+      if(typ == OBJ_VLINE || typ == OBJ_TREND)
+        ObjectDelete(0, name);
+     }
+   }
+ }
+
+//+------------------------------------------------------------------+
+//| TOGGLE BUTTON                                                    |
+//+------------------------------------------------------------------+
+void DrawButton()
+ {
+  if(ObjectFind(0, BTN_ID) < 0)
+    ObjectCreate(0, BTN_ID, OBJ_BUTTON, 0, 0, 0);
+
+  ObjectSetInteger(0, BTN_ID, OBJPROP_XDISTANCE, 15);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_YDISTANCE, 25);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_XSIZE, 130);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_YSIZE, 25);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_FONTSIZE, 8);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_SELECTABLE, false);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_BORDER_TYPE, BORDER_RAISED);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_BACK, false);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_TIMEFRAMES, VISIBLE_TF);
+  ObjectSetInteger(0, BTN_ID, OBJPROP_COLOR, clrWhite);
+
+  ObjectSetInteger(0, BTN_ID, OBJPROP_BGCOLOR, SwitchDaySeparator ? clrLimeGreen : clrFireBrick);
+  ObjectSetString(0, BTN_ID, OBJPROP_TEXT, SwitchDaySeparator ? "Vlines: ON" : "Vlines: OFF");
+ }
+
+//+------------------------------------------------------------------+
+//| FN: UTILITIES                                                    |
+//+------------------------------------------------------------------+
+string TFCompare()
+ {
+  int p = Period();
+  if(p >= 1 && p <= 30)
+    return "MINUTE";
+  if(p >= 16385 && p <= 16396)
+    return "HOUR";
+  if(p == 16408)
+    return "DAY";
+  if(p == 32769)
+    return "WEEK";
+  if(p == 49153)
+    return "MONTH";
+  return "invalid";
+ }
+
+//+------------------------------------------------------------------+
+//| FN: NAME DAY                                                     |
+//+------------------------------------------------------------------+
+string NameDay(int n)
+ {
+  string d[] = {"DOMINGO", "LUNES", "MARTES", "MIERCOLES", "JUEVES", "VIERNES", "SABADO"};
+  if(n >=0 && n < ArraySize(d))
+    return d[n];
+  return "";
+ }
+
+//+------------------------------------------------------------------+
+//| FN: CONVERT SERVER TIME TO LOCAL TIME6                           |
+//+------------------------------------------------------------------+
+int GMTZoneToLocal(int h)
+ {
+  int offset = (int)MathRound((TimeCurrent() - TimeLocal()) / 3600.0);
+  int convert = h - offset;
+  if(convert < 0)
+    convert += 24;
+  if(convert >= 24)
+    convert -= 24;
+  return(convert);
+ }
+//+------------------------------------------------------------------+
+
