@@ -32,9 +32,12 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
  {
-  for(int i=0; i<ArraySize(buttons); i++)
-    ObjectDelete(0, buttons[i]);
-  ClearAllDrawings();
+  if(reason == 1)
+   {
+    for(int i=0; i<ArraySize(buttons); i++)
+      ObjectDelete(0, buttons[i]);
+    ClearAllDrawings();
+   }
  }
 
 //+------------------------------------------------------------------+
@@ -152,7 +155,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
         // Selección de herramienta (cualquier otro botón)
         active_tool = buttons[i];
         wait_for_click = true;
-        Print("Herramienta seleccionada: ", active_tool, " (esperando clic en gráfico)");
+        //Print("Herramienta seleccionada: ", active_tool, " (esperando clic en gráfico)");
 
         // Resaltar botón activo y marcar su estado (visual pressed)
         for(int j=0; j<ArraySize(buttons); j++)
@@ -264,6 +267,7 @@ void DrawObject(string tool, datetime t, double p)
   ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
   ObjectSetInteger(0, name, OBJPROP_SELECTED, true);
+  ObjectSetInteger(0, name, OBJPROP_HIDDEN, false);
  }
 
 //+------------------------------------------------------------------+
@@ -289,6 +293,7 @@ void ResetButtonColor(int i)
   string name = buttons[i];
   color bg = (name == "ClearAll") ? clrMaroon : clrDimGray;
   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bg);
+  ObjectSetInteger(0, name, OBJPROP_STATE, false);
  }
 //+------------------------------------------------------------------+
 

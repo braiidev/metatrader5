@@ -94,16 +94,24 @@ void candleRangeUpdate(candleRange &o)
    {
     o.highPrice = high;
     if(ObjectFind(0, o.highName) != -1)
+     {
       ObjectMove(0, o.highName, 0, o.dt, o.highPrice);
-      //ObjectSetDouble(0, o.highName, OBJPROP_PRICE, o.highPrice);
+     }
+    else
+      return;
    }
+  ObjectMove(0, o.highName, 1, TimeCurrent(), o.highPrice);
   if(o.lowPrice != low)
    {
     o.lowPrice = low;
     if(ObjectFind(0, o.lowName) != -1)
+     {
       ObjectMove(0, o.lowName, 0, o.dt, o.lowPrice);
-      //ObjectSetDouble(0, o.lowName, OBJPROP_PRICE, o.lowPrice);
+     }
+    else
+      return;
    }
+  ObjectMove(0, o.lowName, 1, TimeCurrent(), o.lowPrice);
  }
 
 //+------------------------------------------------------------------+
@@ -150,27 +158,22 @@ string DrawLines(candleRange &o)
 bool DrawLine(string n, datetime dt, double p, color c, int s, string d)
  {
 // si ya existe, actualiza
-  if(ObjectFind(0, n) != -1)
+  bool created = true;
+  if(ObjectFind(0, n) == -1)
    {
-    ObjectSetDouble(0, n, OBJPROP_PRICE, p);
-    ObjectSetInteger(0, n, OBJPROP_COLOR, c);
-    ObjectSetInteger(0, n, OBJPROP_STYLE, s);
-    ObjectSetInteger(0, n, OBJPROP_RAY_RIGHT, CRT_RAY ? 1 : 0);
-    ObjectSetString(0, n, OBJPROP_TEXT, d);
-    ObjectSetInteger(0, n, OBJPROP_BACK, true);
-    return true;
+    created = ObjectCreate(0, n, OBJ_TREND, 0, dt, p, TimeCurrent(), p);
+    if(!created)
+      return created;
    }
+  else
+    ObjectMove(0, n, 1, TimeCurrent(), p);
+  ObjectSetDouble(0, n, OBJPROP_PRICE, p);
+  ObjectSetInteger(0, n, OBJPROP_COLOR, c);
+  ObjectSetInteger(0, n, OBJPROP_STYLE, s);
+  ObjectSetInteger(0, n, OBJPROP_RAY_RIGHT, CRT_RAY ? 1 : 0);
+  ObjectSetString(0, n, OBJPROP_TEXT, d);
+  ObjectSetInteger(0, n, OBJPROP_BACK, true);
 
-// crear línea nueva
-  bool created = ObjectCreate(0, n, OBJ_TREND, 0, dt, p, TimeCurrent(), p);
-  if(created)
-   {
-    ObjectSetInteger(0, n, OBJPROP_COLOR, c);
-    ObjectSetInteger(0, n, OBJPROP_STYLE, s);
-    ObjectSetInteger(0, n, OBJPROP_RAY_RIGHT, CRT_RAY ? 1 : 0);
-    ObjectSetString(0, n, OBJPROP_TEXT, d);
-    ObjectSetInteger(0, n, OBJPROP_BACK, true);
-   }
   return created;
  }
 //+------------------------------------------------------------------+
