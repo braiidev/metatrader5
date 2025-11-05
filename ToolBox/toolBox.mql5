@@ -1,0 +1,228 @@
+//+------------------------------------------------------------------+
+//|                                           DrawingToolbox.mq5     |
+//|                                                  Braiidev (mod)  |
+//|                             Powered by Chatgpt                   |
+//+------------------------------------------------------------------+
+#property indicator_chart_window
+
+//=== CONSTANTES ===//
+#define PANEL_Y  20
+#define BTN_SIZE 30
+
+//=== VARIABLES GLOBALES ===//
+string buttons[]        = {"HLine", "VLine", "Trend", "Rect", "Text", "Dot", "ClearAll"};
+string button_labels[]  = {"─", "│", "╱", "█", "TXT", "∙", "C"};
+string active_tool      = "";
+bool   wait_for_click   = false;
+
+//+------------------------------------------------------------------+
+//| OnInit                                                          |
+//+------------------------------------------------------------------+
+int OnInit()
+{
+   CreatePanel();
+   ChartRedraw();
+   return(INIT_SUCCEEDED);
+}
+
+//+------------------------------------------------------------------+
+//| OnDeinit                                                        |
+//+------------------------------------------------------------------+
+void OnDeinit(const int reason)
+{
+   for(int i=0; i<ArraySize(buttons); i++)
+      ObjectDelete(0, buttons[i]);
+}
+
+//+------------------------------------------------------------------+
+//| OnCalculate                                                     |
+//+------------------------------------------------------------------+
+int OnCalculate(const int32_t rates_total,
+                const int32_t prev_calculated,
+                const datetime& time[],
+                const double& open[],
+                const double& high[],
+                const double& low[],
+                const double& close[],
+                const long& tick_volume[],
+                const long& volume[],
+                const int& spread[])
+{
+   return(rates_total);
+}
+
+//+------------------------------------------------------------------+
+//| Crear el panel centrado con los botones                         |
+//+------------------------------------------------------------------+
+void CreatePanel()
+{
+   int chart_width = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+   int total_width = ArraySize(buttons) * (BTN_SIZE + 5);
+   int panel_x = (chart_width - total_width) / 2; // centrado en eje X
+
+   // Eliminar botones previos por si se redibuja
+   for(int b=0; b<ArraySize(buttons); b++)
+      ObjectDelete(0, buttons[b]);
+
+   for(int i=0; i<ArraySize(buttons); i++)
+   {
+      string name = buttons[i];
+      ObjectCreate(0, name, OBJ_BUTTON, 0, 0, 0);
+      ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, panel_x + i*(BTN_SIZE+5));
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, PANEL_Y);
+      ObjectSetInteger(0, name, OBJPROP_XSIZE, BTN_SIZE);
+      ObjectSetInteger(0, name, OBJPROP_YSIZE, BTN_SIZE);
+      ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+
+      color bg = (name == "ClearAll") ? clrMaroon : clrDimGray;
+      ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bg);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, clrWhite);
+      ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 9);
+      ObjectSetString(0, name, OBJPROP_TEXT, button_labels[i]);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Manejador de eventos del gráfico                                |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+{
+   // --- Clic en un botón del panel ---
+   if(id == CHARTEVENT_OBJECT_CLICK)
+   {
+      for(int i=0; i<ArraySize(buttons); i++)
+      {
+         if(sparam == buttons[i])
+         {
+            // Botón "ClearAll"
+            if(sparam == "ClearAll")
+            {
+               ClearAllDrawings();
+               wait_for_click = false;
+               active_tool = "";
+               for(int j=0; j<ArraySize(buttons); j++)
+                  ResetButtonColor(j);
+               Print("🧹 Todos los objetos TB_ eliminados.");
+               return;
+            }
+
+            // Selección de herramienta
+            active_tool = buttons[i];
+            wait_for_click = true;
+            Print("Herramienta seleccionada: ", active_tool, " (esperando clic en gráfico)");
+
+            // Resaltar botón activo
+            for(int j=0; j<ArraySize(buttons); j++)
+            {
+               if(j == i)
+                  ObjectSetInteger(0, buttons[j], OBJPROP_BGCOLOR, clrDarkOrange);
+               else
+                  ResetButtonColor(j);
+            }
+            return;
+         }
+      }
+   }
+
+   // --- Recentrar si se cambia el tamaño del gráfico ---
+   if(id == CHARTEVENT_CHART_CHANGE)
+   {
+      CreatePanel();
+      ChartRedraw();
+   }
+
+   // --- Clic en el gráfico ---
+   if(id == CHARTEVENT_CLICK && active_tool != "" && wait_for_click)
+   {
+      int x = (int)lparam;
+      int y = (int)dparam;
+
+      // Ignorar clics dentro del área del panel
+      int chart_width = (int)ChartGetInteger(0, CHART_WIDTH_IN_PIXELS);
+      int total_width = ArraySize(buttons) * (BTN_SIZE + 5);
+      int panel_x = (chart_width - total_width) / 2;
+      int panel_y = PANEL_Y;
+      int panel_h = BTN_SIZE;
+
+      if(x >= panel_x && x <= panel_x + total_width && y >= panel_y && y <= panel_y + panel_h)
+         return; // clic dentro del panel, no dibujar
+
+      datetime click_time;
+      double click_price;
+      int subwindow = 0;
+
+      if(ChartXYToTimePrice(0, x, y, subwindow, click_time, click_price))
+      {
+         DrawObject(active_tool, click_time, click_price);
+         Print("Dibujado: ", active_tool, " en ", TimeToString(click_time), " @ ", DoubleToString(click_price, _Digits));
+      }
+
+      // Desactivar herramienta después de dibujar
+      active_tool = "";
+      wait_for_click = false;
+
+      // Restaurar color botones
+      for(int i=0; i<ArraySize(buttons); i++)
+         ResetButtonColor(i);
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Crear objeto según la herramienta seleccionada                  |
+//+------------------------------------------------------------------+
+void DrawObject(string tool, datetime t, double p)
+{
+   string name = StringFormat("TB_%s_%d", tool, TimeLocal());
+
+   if(tool == "HLine")
+      ObjectCreate(0, name, OBJ_HLINE, 0, 0, p);
+   else if(tool == "VLine")
+      ObjectCreate(0, name, OBJ_VLINE, 0, t, 0);
+   else if(tool == "Trend")
+      ObjectCreate(0, name, OBJ_TREND, 0, t-3600, p, t, p);
+   else if(tool == "Rect")
+      ObjectCreate(0, name, OBJ_RECTANGLE, 0, t-1800, p+0.001, t, p-0.001);
+   else if(tool == "Text")
+   {
+      ObjectCreate(0, name, OBJ_TEXT, 0, t, p);
+      ObjectSetString(0, name, OBJPROP_TEXT, "Texto");
+   }
+   else if(tool == "Dot")
+   {
+      ObjectCreate(0, name, OBJ_ARROW, 0, t, p);
+      ObjectSetInteger(0, name, OBJPROP_ARROWCODE, 159);
+   }
+
+   ObjectSetInteger(0, name, OBJPROP_COLOR, clrOrange);
+   ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
+   ObjectSetInteger(0, name, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, name, OBJPROP_SELECTED, true);
+}
+
+//+------------------------------------------------------------------+
+//| Eliminar todos los objetos creados por el toolbox               |
+//+------------------------------------------------------------------+
+void ClearAllDrawings()
+{
+   int total = ObjectsTotal(0);
+   for(int i = total - 1; i >= 0; i--)
+   {
+      string name = ObjectName(0, i);
+      if(StringFind(name, "TB_") == 0)
+         ObjectDelete(0, name);
+   }
+   ChartRedraw();
+}
+
+//+------------------------------------------------------------------+
+//| Restaurar color de botón según tipo                             |
+//+------------------------------------------------------------------+
+void ResetButtonColor(int i)
+{
+   string name = buttons[i];
+   color bg = (name == "ClearAll") ? clrMaroon : clrDimGray;
+   ObjectSetInteger(0, name, OBJPROP_BGCOLOR, bg);
+}
+//+------------------------------------------------------------------+
+
