@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Braiidev"
 #property link      "@braiidev-github-instagram"
-#property version   "1.25"
+#property version   "1.26"
 #property indicator_chart_window
 
 //=== INPUTS ==========================================================
@@ -17,7 +17,7 @@ input bool Indice = false;
 string BTN_ID        = "SwitchDaySeparator";
 string GLOBAL_KEY    = "DaySeparatorState";
 
-#define COLOR_DAYRANGE clrOrangeRed
+
 #define VISIBLE_TF (OBJ_ALL_PERIODS & ~(OBJ_PERIOD_D1 | OBJ_PERIOD_W1 | OBJ_PERIOD_MN1))
 
 enum TimeUnitSeconds
@@ -94,18 +94,9 @@ int OnCalculate(const int rates_total,
  {
   string tfName = TFCompare();
 
-  if(tfName == "HOUR" || tfName == "MINUTE" || tfName == "DAY")
-   {
+  if(tfName == "HOUR" || tfName == "MINUTE")
     DrawVlines(prev_calculated, rates_total, time, open, SwitchDaySeparator);
 
-    // UPDATE NEW RAY IN REAL TIME ONLY THIS CHANGE A NEW BAR
-    static datetime lastUpdate = 0;
-    if(time[0] != lastUpdate)
-     {
-      lastUpdate = time[0];
-      DrawDayRange(rates_total, time, high, low);
-     }
-   }
 
   return(rates_total);
  }
@@ -204,7 +195,7 @@ void DrawSession(const SessionCfg &cfg, const MqlDateTime &t_base,
 
 // ONLY RESET DAY IS DETECTED
   int hmatch = Indice ? 1 : 0;
-  
+
   if(t_base.hour != hmatch || t_base.min != 0)
     return;
 
@@ -215,40 +206,6 @@ void DrawSession(const SessionCfg &cfg, const MqlDateTime &t_base,
   string desc = StringFormat("[%02d:%02d]", GMTZoneToLocal(cfg.hour), cfg.minute);
 
   CreateOrUpdateVline(name, open_time, cfg.clr, state, tip, desc);
- }
-
-//+------------------------------------------------------------------+
-//| DRAW DAILY RANGES (TODAY, YESTERDAY AND BEFORE YESTERDAY)        |
-//+------------------------------------------------------------------+
-void DrawDayRange(const int rates_total,
-                  const datetime &time[],
-                  const double &high[],
-                  const double &low[])
- {
-  color dayColors[3] = { clrOrangeRed, clrOrange, clrDimGray };
-  string dayNames[3] = { "Hoy", "Ayer", "Antes de ayer" };
-
-  for(int shift = 0; shift < 3; shift++)  // 0=today, 1=yesterday, 2=before yesterday
-   {
-    double dayHigh = iHigh(_Symbol, PERIOD_D1, shift);
-    double dayLow  = iLow(_Symbol, PERIOD_D1, shift);
-    datetime dayStart = iTime(_Symbol, PERIOD_D1, shift); // 00:00 server
-    if(dayStart == 0)
-      continue; // security
-
-    datetime t1 = dayStart;
-    datetime t2 = TimeCurrent();
-
-    string highName = StringFormat("Session_high_D%d", shift);
-    string lowName  = StringFormat("Session_low_D%d", shift);
-
-    // CREATE OR MOVE RANGE RAY
-    CreateOrUpdateTrend(highName, t1, dayHigh, t2, dayHigh, dayColors[shift],
-                        StringFormat("%s High (%.5f)", dayNames[shift], dayHigh));
-
-    CreateOrUpdateTrend(lowName, t1, dayLow, t2, dayLow, dayColors[shift],
-                        StringFormat("%s Low (%.5f)", dayNames[shift], dayLow));
-   }
  }
 
 //+------------------------------------------------------------------+
@@ -266,34 +223,6 @@ void CreateOrUpdateVline(const string name, datetime dt, color c, bool state, co
   ObjectSetInteger(0, name, OBJPROP_BACK, true);
   ObjectSetString(0, name, OBJPROP_TOOLTIP, vtip);
   ObjectSetString(0, name, OBJPROP_TEXT, text);
- }
-
-//+------------------------------------------------------------------+
-//| FN: CREATE OR UPDATE TREND LINE RAY                              |
-//+------------------------------------------------------------------+
-void CreateOrUpdateTrend(const string name,
-                         datetime t1, double p1,
-                         datetime t2, double p2,
-                         color col, const string &tip)
- {
-  if(p1 == 0.0 || t1 == 0)
-    return;
-
-  if(ObjectFind(0, name) < 0)
-    ObjectCreate(0, name, OBJ_TREND, 0, t1, p1, t2, p2);
-  else
-   {
-    ObjectMove(0, name, 0, t1, p1);
-    ObjectMove(0, name, 1, t2, p2);
-   }
-
-  ObjectSetInteger(0, name, OBJPROP_COLOR, col);
-  ObjectSetInteger(0, name, OBJPROP_STYLE, STYLE_SOLID);
-  ObjectSetInteger(0, name, OBJPROP_WIDTH, 1);
-  ObjectSetInteger(0, name, OBJPROP_RAY_RIGHT, false);
-  ObjectSetInteger(0, name, OBJPROP_BACK, false);
-  ObjectSetInteger(0, name, OBJPROP_TIMEFRAMES, VISIBLE_TF | OBJ_PERIOD_D1);
-  ObjectSetString(0, name, OBJPROP_TOOLTIP, tip);
  }
 
 //+------------------------------------------------------------------+
