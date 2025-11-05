@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Braiidev"
 #property link      "@braiidev-github-instagram"
-#property version   "1.26"
+#property version   "1.25"
 #property indicator_chart_window
 
 //=== INPUTS ==========================================================
@@ -29,7 +29,7 @@ enum TimeUnitSeconds
 //=== DATATYPE ========================================================
 struct SessionCfg
  {
-  string             name;     // SESSION NAMEndon", ...
+  string             name;     // SESSION NAME", ...
   bool               enabled;  // SWITCH TO DRAW ON CHART
   int                hour;     // HOUR TO OPEN SESSION IN SERVER TIME
   int                minute;   // MINUTE OFFSET FOR OPEN (NYSE CASE)
@@ -139,7 +139,7 @@ void DrawVlines(const int prev_calculated,
                 bool state)
  {
 // CUTOFF TIME TO ONE YEAR CALENDAR TIME CANDLE BARS
-  datetime cutoff = TimeCurrent() - 365 * 24 * 60 * 60;
+  datetime cutoff = TimeCurrent() - 60 * 24 * 60 * 60;
   int start = (prev_calculated == 0) ? 0 : (prev_calculated - 1);
 
   for(int i = start; i < rates_total; i++)
