@@ -771,7 +771,9 @@ void CheckEntrySignal(string h1EmaState, const double &close[], const double &hi
       if(signal != prevEntrySignal)
       {
          prevEntrySignal = signal;
-         Alert("Confluence_v1: ", signal, " setup en ", _Symbol, " - E:", DoubleToString(entryPrice, _Digits));
+         string msg = "Confluence_v1: " + signal + " setup en " + _Symbol + " E:" + DoubleToString(entryPrice, _Digits) + " SL:" + DoubleToString(sl, _Digits);
+         Alert(msg);
+         SendNotification(msg);
          PlaySound("alert2.wav");
       }
    }
